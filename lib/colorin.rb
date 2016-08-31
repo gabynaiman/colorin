@@ -1,59 +1,90 @@
+require 'yaml'
+
 class Colorin < String
 
-  VERSION = '1.0.0'
-
-  CLEAR = 0
+  configuration = YAML.load_file File.join(File.dirname(__FILE__), 'configuration.yml')
   
-  CODES = {
-    bold:             1,
-    dark:             2,
-    underline:        4,
-    blink:            5,
-    reverse:          7,
-    hide:             8,
+  VERSION = '2.0.0'
 
-    black:            30,
-    red:              31, 
-    green:            32, 
-    yellow:           33,
-    blue:             34,
-    magenta:          35,
-    cyan:             36,
-    white:            37,
-    black_light:      90,
-    red_light:        91, 
-    green_light:      92, 
-    yellow_light:     93,
-    blue_light:       94,
-    magenta_light:    95,
-    cyan_light:       96,
-    
-    on_black:         40,
-    on_red:           41, 
-    on_green:         42, 
-    on_yellow:        43,
-    on_blue:          44,
-    on_magenta:       45,
-    on_cyan:          46,
-    on_gray:          47,
-    on_black_light:   100,
-    on_red_light:     101, 
-    on_green_light:   102, 
-    on_yellow_light:  103,
-    on_blue_light:    104,
-    on_magenta_light: 105,
-    on_cyan_light:    106,
-    on_white:         107 
-  }
+  STYLES = configuration[:styles].freeze
 
-  CODES.each do |name, value|
+  DEFAULT_COLORS = configuration[:default_colors].freeze
+
+  CUSTOM_COLORS = configuration[:custom_colors].freeze
+
+  [STYLES, DEFAULT_COLORS].each do |config|
+    config.each do |name, value|
+      define_method name do
+        wrap value
+      end
+
+      define_singleton_method name do |string|
+        Colorin.new(string).send name
+      end
+    end
+  end
+
+  CUSTOM_COLORS.each do |name, value|
     define_method name do
-      Colorin.new "\e[#{value}m#{self}\e[#{CLEAR}m"
+      hex value
+    end
+
+    define_method "on_#{name}" do
+      on_hex value
     end
 
     define_singleton_method name do |string|
       Colorin.new(string).send name
     end
+
+    define_singleton_method "on_#{name}" do |string|
+      Colorin.new(string).send "on_#{name}"
+    end
+  end
+
+  def rgb(r, g, b)
+    wrap "38;5;#{rgb_to_256(r, g, b)}"
+  end
+
+  def on_rgb(r, g, b)
+    wrap "48;5;#{rgb_to_256(r, g, b)}"
+  end
+
+  def hex(hex)
+    rgb *hex_to_rgb(hex)
+  end
+
+  def on_hex(hex)
+    on_rgb *hex_to_rgb(hex)
+  end
+
+  def self.color_palette
+    DEFAULT_COLORS.keys.reject { |c| c.to_s.start_with? 'on_' }.map { |color| "#{Colorin.send "on_#{color}", '    ' }  #{Colorin.send color, color.to_s}" }
+  end
+
+  def self.custom_color_palette
+    CUSTOM_COLORS.keys.map { |color| "#{Colorin.send "on_#{color}", '    ' }  #{Colorin.send color, color.to_s}" }
+  end
+
+  private
+
+  def wrap(code)
+    Colorin.new "\e[#{code}m#{self}\e[#{STYLES[:clear]}m"
+  end
+
+  def hex_to_rgb(hex)
+    raise ArgumentError, "Invalid hexadecimal: #{hex}" unless hex.match /[0-9abcdef]{6}/i
+    [
+      hex[0,2].to_i(16),
+      hex[2,2].to_i(16),
+      hex[4,2].to_i(16),
+    ]
+  end
+
+  def rgb_to_256(r, g, b)
+    raise ArgumentError, "Color out of range (0-255): r: #{r}, g: #{g}, b: #{b}" if [r,g,b].any? { |c| c < 0 || c > 255 }
+    red, green, blue = [r, g, b].map { |c| (6 * (c / 256.0)).to_i }
+    (red * 36 + green * 6 + blue + 16).abs
   end
 
 end
